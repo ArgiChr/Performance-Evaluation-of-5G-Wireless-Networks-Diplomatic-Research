@@ -1,0 +1,161 @@
+wirelessnetworkSupportPackageCheck
+Create a wireless network simulator.
+rng("default")           % Reset the random number generator
+numFrameSimulation = 40; % Simulation time in terms of number of 10 ms frames
+networkSimulator = wirelessNetworkSimulator.init;
+To use full PHY, set the PHY type, phyAbstractionType, to "none". To use abstract PHY, set phyAbstractionType to "linkToSystemMapping". All the nodes (gNB and UEs) must use the same PHY processing method.
+phyAbstractionType = "linkToSystemMapping";
+To use SRS based DL SU-MIMO, set the csiMeasurementSignalDLType to "SRS". The default value of the csiMeasurementSignalDLType is "CSI-RS".
+csiMeasurementSignalDLType = "CSI-RS";
+Set duplexType to "TDD" or "FDD". For SRS based DL SU-MIMO, you must set duplexType to "TDD".
+duplexType = "FDD";
+Create a gNB. Specify the position, the carrier frequency, the channel bandwidth, the subcarrier spacing, duplex mode, the number of transmit antennas, the number of receive antennas, and the receive gain of the node.
+gNB = nrGNB(Position=[0 0 30],CarrierFrequency=7e9,ChannelBandwidth=15e6,SubcarrierSpacing=15e3,DuplexMode=duplexType, ...
+    NumTransmitAntennas=16,NumReceiveAntennas=16,ReceiveGain=11,PHYAbstractionMethod=phyAbstractionType);
+configureScheduler(gNB, CSIMeasurementSignalDL=csiMeasurementSignalDLType);
+Create 4 UE nodes. Specify the name, the position, the number of transmit antennas, the number of receive antennas, and the receive gain of each UE node.
+uePositions = [300 0 3; 300 0 3; 300 0 3; 300 0 3];
+ueNames = "UE-" + (1:size(uePositions,1));
+UEs = nrUE(Name=ueNames,Position=uePositions,NumTransmitAntennas=4,NumReceiveAntennas=4,ReceiveGain=11,PHYAbstractionMethod=phyAbstractionType);
+Connect the UE nodes to gNB. Specify the radio link control (RLC) bearer configuration to establish an RLC bearer between the gNB and each UE node.
+rlcBearer = nrRLCBearerConfig(SNFieldLength=6,BucketSizeDuration=10); % Create an RLC bearer configuration object.
+connectUE(gNB,UEs,RLCBearerConfig=rlcBearer)                          % Establish an RLC bearer between the gNB and UE nodes
+Set the periodic DL and UL application traffic pattern for UEs.
+appDataRate = 20e6; % Application data rate in kilobits per second (kbps)
+
+% Άρα μέσα στο loop:
+for ueIdx = 1:length(UEs)
+    if ueIdx == 2 || ueIdx == 3 || ueIdx == 4
+        continue; 
+    end
+
+
+    % DL traffic
+    dlApp = networkTrafficOnOff(GeneratePacket=true, ...
+        OnTime=numFrameSimulation*10e-3, OffTime=0, DataRate=appDataRate);
+    addTrafficSource(gNB, dlApp, DestinationNode=UEs(ueIdx));
+
+    % UL traffic
+    ulApp = networkTrafficOnOff(GeneratePacket=true, ...
+        OnTime=numFrameSimulation*10e-3, OffTime=0, DataRate=appDataRate);
+    addTrafficSource(UEs(ueIdx), ulApp);
+end
+
+targetUE = UEs(2);
+
+% Pattern: ON 0.2s → OFF 0.2s → επανάληψη
+dlAppUE2 = networkTrafficOnOff( ...
+    GeneratePacket=true, ...
+    OnTime=0.2, ...
+    OffTime=0.2, ...
+    DataRate=appDataRate);
+
+ulAppUE2 = networkTrafficOnOff( ...
+    GeneratePacket=true, ...
+    OnTime=0.2, ...
+    OffTime=0.2, ...
+    DataRate=appDataRate);
+    
+% Προσθήκη στον gNB και στο UE-3
+addTrafficSource(gNB, dlAppUE2, DestinationNode=targetUE);
+addTrafficSource(targetUE, ulAppUE2);
+
+% Καθορισμός του UE-3
+targetUE = UEs(3);
+
+% Δημιουργία traffic εφαρμογής με σταθερό pattern: ON=80ms, OFF=40ms
+dlAppUE3 = networkTrafficOnOff( ...
+    GeneratePacket=true, ...
+    OnTime=0.08, ...       % 80ms ON
+    OffTime=0.04, ...      % 40ms OFF
+    DataRate=appDataRate); % Χρήση κοινής τιμής
+
+ulAppUE3 = networkTrafficOnOff( ...
+    GeneratePacket=true, ...
+    OnTime=0.08, ...
+    OffTime=0.04, ...
+    DataRate=appDataRate);
+
+% Προσθήκη στον gNB και στο UE-3
+addTrafficSource(gNB, dlAppUE3, DestinationNode=targetUE);
+addTrafficSource(targetUE, ulAppUE3);
+
+targetUE = UEs(4);
+
+% Pattern: ON 0.2s → OFF 0.2s → επανάληψη
+dlAppUE4 = networkTrafficOnOff( ...
+    GeneratePacket=true, ...
+    OnTime=0.04, ...
+    OffTime=0.04, ...
+    DataRate=appDataRate);
+
+ulAppUE4 = networkTrafficOnOff( ...
+    GeneratePacket=true, ...
+    OnTime=0.04, ...
+    OffTime=0.04, ...
+    DataRate=appDataRate);
+    
+% Προσθήκη στον gNB και στο UE-3
+addTrafficSource(gNB, dlAppUE4, DestinationNode=targetUE);
+addTrafficSource(targetUE, ulAppUE4);
+Add the gNB and UE nodes to the network simulator.
+addNodes(networkSimulator,gNB)
+addNodes(networkSimulator,UEs)
+Use 3GPP TR 38.901 channel model for all links. You can also run the example with a CDL channel model.
+channelModel = "3GPP TR 38.901";
+
+if strcmp(channelModel,"CDL channel")
+    % Create an N-by-N array of link-level channels, where N represents the number of
+    % nodes in the cell. An element at index (i,j) contains the channel instance
+    % from node i to node j. If the element at index (i,j) is empty, it indicates
+    % the absence of a channel from node i to node j. Here i and j represents the
+    % node IDs.
+    channelConfig = struct(DelayProfile="CDL-C", DelaySpread=300e-9);
+    channels = createCDLChannels(channelConfig,gNB,UEs);
+
+    % Create a custom channel model using channels and install the custom
+    % channel on the simulator. Network simulator applies the channel to a
+    % packet in transit before passing it to the receiver.
+    channel = hNRCustomChannelModel(channels,struct(PHYAbstractionMethod=phyAbstractionType));
+    addChannelModel(networkSimulator,@channel.applyChannelModel)
+else
+    % Model a rural macro scenario, as defined in the 3GPP TR 38.901 channel
+    % model, using the h38901Channel object.
+
+    % Define scenario boundaries
+    pos = reshape([gNB.Position UEs.Position],3,[]);
+    minX = min(pos(1,:));          % x-coordinate of the left edge of the scenario in meters
+    minY = min(pos(2,:));          % y-coordinate of the bottom edge of the scenario in meters
+    width = max(pos(1,:)) - minX;  % Width (right edge of the 2D scenario) in meters, given as maxX - minX
+    height = max(pos(2,:)) - minY; % Height (top edge of the 2D scenario) in meters, given as maxY - minY
+
+    % Create the channel model
+    channel = h38901Channel(Scenario="RMa",ScenarioExtents=[minX minY width height]);
+    % Add the channel model to the simulator
+    addChannelModel(networkSimulator,@channel.channelFunction);
+    connectNodes(channel,networkSimulator);
+end
+Set the enableTraces to true to log the traces. When you set the enableTraces parameter to false, the simulation does not log any traces. However, setting enableTraces to false can speed up the simulation.
+enableTraces = true;
+Set up scheduling logger and PHY logger.
+if enableTraces
+    % Create an object to log scheduler traces
+    simSchedulingLogger = helperNRSchedulingLogger(numFrameSimulation,gNB,UEs);
+    % Create an object to log for PHY traces
+    simPhyLogger = helperNRPhyLogger(numFrameSimulation,gNB,UEs);
+end
+The example updates the metrics plots periodically. Specify the number of updates during the simulation.
+numMetricPlotUpdates = 10;
+Set up a metric visualizer.
+metricsVisualizer = helperNRMetricsVisualizer(gNB,UEs,NumMetricsSteps=numMetricPlotUpdates,...
+    PlotSchedulerMetrics=true,PlotPhyMetrics=true);
+Write the logs to MAT-file. You can use these logs for post-simulation analysis.
+simulationLogFile = "simulationLogs"; % For logging the simulation traces
+Run the simulation for the specified numFrameSimulation frames.
+simulationTime = numFrameSimulation * 1e-2; 
+run(networkSimulator, simulationTime);% 40 frames × 10ms = 0.4 sec
+Read per-node statistics.
+gNBStats = statistics(gNB);
+ueStats = statistics(UEs);
+At the end of the simulation, compare the achieved values for system performance indicators with theoretical peak values (considering zero overheads). Performance indicators displayed are achieved data rate (UL and DL), achieved spectral efficiency (UL and DL), and block error rate (BLER) observed for UEs (UL and DL). The calculated peak values are in accordance with 3GPP TR 37.910.
+displayPerformanceIndicators(metricsVisualizer)
